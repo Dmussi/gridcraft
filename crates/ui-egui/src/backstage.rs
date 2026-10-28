@@ -738,6 +738,20 @@ fn export(app: &mut SheetApp, ui: &mut Ui, bs: &mut Backstage, out: &mut Outcome
     }
 }
 
+/// Fit to one page stops shrinking at 10%, so a very large sheet can still need several pages.
+/// Says so instead of leaving the user to find out when they open the PDF.
+fn warn_if_not_one_page(app: &mut SheetApp, result: &Json, fit_to_page: bool) {
+    let pages = result.get("pages").and_then(Json::as_u64).unwrap_or(0);
+    if fit_to_page && pages > 1 {
+        let text = app
+            .ui
+            .language
+            .tr("This sheet is too large to fit on one page, even at the smallest scale (10%). The PDF has {pages} pages.")
+            .replace("{pages}", &pages.to_string());
+        app.message = Some(("GridCraft".into(), text));
+    }
+}
+
 /// Exports the active workbook as `pdf`, `csv` or `html`: through the save picker on the desktop,
 /// as a browser download on the web. `fit_to_page` fits each sheet of a PDF on one page; the other
 /// formats ignore it. Returns whether a file was written or handed over.
@@ -762,7 +776,10 @@ pub fn export_as(app: &mut SheetApp, fmt: &str, fit_to_page: bool) -> bool {
             params["fitToPage"] = json!(true);
         }
         return match app.run(id, params) {
-            Ok(_) => true,
+            Ok(r) => {
+                warn_if_not_one_page(app, &r, fit_to_page);
+                true
+            }
             Err(e) => {
                 app.message = Some(("GridCraft".into(), crate::clean_error(&e)));
                 false
@@ -777,7 +794,10 @@ pub fn export_as(app: &mut SheetApp, fmt: &str, fit_to_page: bool) -> bool {
         // Without a path the PDF comes back as bytes, which `SheetApp::run` hands to the browser.
         let params = if fit_to_page { json!({"fitToPage": true}) } else { json!({}) };
         return match app.run(id, params) {
-            Ok(_) => true,
+            Ok(r) => {
+                warn_if_not_one_page(app, &r, fit_to_page);
+                true
+            }
             Err(e) => {
                 app.message = Some(("GridCraft".into(), crate::clean_error(&e)));
                 false
